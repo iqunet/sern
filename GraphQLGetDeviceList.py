@@ -1,5 +1,5 @@
 # requires iQunet version > 1.2.2
-# install gql from github
+# install gql from github (pip install -e git+git://github.com/graphql-python/gql.git#egg=gql)
 
 from gql import Client, gql
 from gql.transport.requests import RequestsHTTPTransport
