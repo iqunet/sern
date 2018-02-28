@@ -15,7 +15,6 @@ if __name__ == '__main__':
     client = connectClient("opc.tcp://xx.xx.xx.xx:4840/freeopcua/server/")
     
     # get device list and print result
-    nsIdx = client.get_namespace_index('http://www.iqunet.com')
     path = [ua.QualifiedName(name = 'Objects', namespaceidx = 0)]
     uaNode = client.get_root_node().get_child(path)
     nodes = uaNode.get_children()
