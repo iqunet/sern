@@ -1,5 +1,6 @@
-import { request, GraphQLClient } from 'graphql-request';
-import rq from 'request-promise-native';
+import { request, GraphQLClient } from 'graphql-request'; // npm install --save graphql-request
+import rq from 'request-promise-native'; // npm install --save request
+                                         // npm install --save request-promise-native
 
 
 function parseCookies(request){
