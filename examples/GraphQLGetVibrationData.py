@@ -43,7 +43,7 @@ if __name__ == '__main__':
     querytext = '''
     { deviceManager { device(macId:"xx:xx:xx:xx") {
     __typename
-    ... on GrapheneVibrationCombo {vibrationTimestampHistory(start:"2018-02-23", end:"2018-02-24", limit:1000, axis:"X")}
+    ... on GrapheneVibrationCombo {vibrationTimestampHistory(start:"2019-01-01T00:00:00.000000+00:00", end:"2019-01-01T00:00:00.000000+00:00", limit:100, axis:"X")}
     }}}
     '''
     
