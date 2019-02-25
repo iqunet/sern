@@ -16,3 +16,5 @@
 [OPCuaGetDeviceList.py](https://github.com/iqunet/sern/blob/master/examples/OPCuaGetDeviceList.py) Uses Python-opcua to retrieve the list of devices connected to your server.
 
 [OPCuaGetVibrationData.py](https://github.com/iqunet/sern/blob/master/examples/OPCuaGetVibrationData.py) Uses Python-opcua to retrieve and plot vibration data of a specific time period.
+
+[OPCuaGetVibrationDataStruct.py](https://github.com/iqunet/sern/blob/master/examples/OPCuaGetVibrationDataStruct.py) Uses Python-opcua to retrieve and plot the vibration structure containing the most recent vibration measurement data in the time and frequency domain.
