@@ -6,7 +6,7 @@ from opcua import Client
 import matplotlib.pyplot as plt
     
 
-def readHistory(macId, browseName = None, startTime = None, endTime = None, numValues = 8192):
+def readHistory(client, macId, browseName = None, startTime = None, endTime = None, numValues = 8192):
     
     # get variable handle
     nsIdx = client.get_namespace_index('http://www.iqunet.com')
@@ -45,7 +45,7 @@ if __name__ == '__main__':
         endDate = pytz.utc.localize(datetime.datetime.strptime("2018-02-24 00:00:00", '%Y-%m-%d %H:%M:%S'))
         
         # retrieve vibration data (replace xx:xx:xx:xx with the macId of your sensor)
-        (values,dates) = readHistory("xx:xx:xx:xx", browseName = "accelerationPack", startTime = startDate, endTime = endDate)
+        (values,dates) = readHistory(client, "xx:xx:xx:xx", browseName = "accelerationPack", startTime = startDate, endTime = endDate)
        
         # convert vibration data to 'g' units and plot data
         data = [val[1:-6] for val in values]
