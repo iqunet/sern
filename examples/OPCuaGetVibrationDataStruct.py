@@ -18,12 +18,15 @@ def getFrequencyDomainAccelerationData(client, macId, axis):
     bpath.append(ua.QualifiedName(name = axis + "AccelFreq", namespaceidx = nsIdx)) 
     uaNode = client.get_root_node().get_child(bpath)
     
-    # load vibration struct
+    # load vibration data
     client.load_type_definitions()  # scan server for custom structures and import them
-    vibrationStruct = uaNode.get_value()
-        
+    vibrationData = uaNode.get_data_value()
+    
     # create dictionary
     vibDict = dict()
+    vibrationStruct = vibrationData.Value.Value
+    vibDict['SourceTimestamp'] = vibrationData.SourceTimestamp
+    vibDict['ServerTimestamp'] = vibrationData.ServerTimestamp
     vibDict['y_ordinate'] = vibrationStruct.y_ordinate
     vibDict['x_abscissa'] = vibrationStruct.x_abscissa
     vibDict['sampleRate'] = vibrationStruct.sampleRate
@@ -31,7 +34,7 @@ def getFrequencyDomainAccelerationData(client, macId, axis):
     vibDict['axis'] = vibrationStruct.axis
     vibDict['vUnits'] = vibrationStruct.vUnits
     vibDict['freqDomain'] = vibrationStruct.freqDomain
-        
+            
     return vibDict
     
 def getTimeDomainAccelerationData(client, macId, axis):
@@ -50,12 +53,15 @@ def getTimeDomainAccelerationData(client, macId, axis):
     bpath.append(ua.QualifiedName(name = axis + "AccelTime", namespaceidx = nsIdx)) 
     uaNode = client.get_root_node().get_child(bpath)
     
-    # load vibration struct
+    # load vibration data
     client.load_type_definitions()  # scan server for custom structures and import them
-    vibrationStruct = uaNode.get_value()
-        
+    vibrationData = uaNode.get_data_value()
+    
     # create dictionary
     vibDict = dict()
+    vibrationStruct = vibrationData.Value.Value
+    vibDict['SourceTimestamp'] = vibrationData.SourceTimestamp
+    vibDict['ServerTimestamp'] = vibrationData.ServerTimestamp
     vibDict['y_ordinate'] = vibrationStruct.y_ordinate
     vibDict['x_abscissa'] = vibrationStruct.x_abscissa
     vibDict['sampleRate'] = vibrationStruct.sampleRate
@@ -63,7 +69,7 @@ def getTimeDomainAccelerationData(client, macId, axis):
     vibDict['axis'] = vibrationStruct.axis
     vibDict['vUnits'] = vibrationStruct.vUnits
     vibDict['freqDomain'] = vibrationStruct.freqDomain
-        
+            
     return vibDict
     
 def getFrequencyDomainVelocityData(client, macId, axis):
@@ -82,12 +88,15 @@ def getFrequencyDomainVelocityData(client, macId, axis):
     bpath.append(ua.QualifiedName(name = axis + "VelocFreq", namespaceidx = nsIdx)) 
     uaNode = client.get_root_node().get_child(bpath)
     
-    # load vibration struct
+    # load vibration data
     client.load_type_definitions()  # scan server for custom structures and import them
-    vibrationStruct = uaNode.get_value()
+    vibrationData = uaNode.get_data_value()
     
     # create dictionary
     vibDict = dict()
+    vibrationStruct = vibrationData.Value.Value
+    vibDict['SourceTimestamp'] = vibrationData.SourceTimestamp
+    vibDict['ServerTimestamp'] = vibrationData.ServerTimestamp
     vibDict['y_ordinate'] = vibrationStruct.y_ordinate
     vibDict['x_abscissa'] = vibrationStruct.x_abscissa
     vibDict['sampleRate'] = vibrationStruct.sampleRate
@@ -95,7 +104,7 @@ def getFrequencyDomainVelocityData(client, macId, axis):
     vibDict['axis'] = vibrationStruct.axis
     vibDict['vUnits'] = vibrationStruct.vUnits
     vibDict['freqDomain'] = vibrationStruct.freqDomain
-        
+            
     return vibDict
     
 def getTimeDomainVelocityData(client, macId, axis):
@@ -114,12 +123,15 @@ def getTimeDomainVelocityData(client, macId, axis):
     bpath.append(ua.QualifiedName(name = axis + "VelocTime", namespaceidx = nsIdx)) 
     uaNode = client.get_root_node().get_child(bpath)
     
-    # load vibration struct
+    # load vibration data
     client.load_type_definitions()  # scan server for custom structures and import them
-    vibrationStruct = uaNode.get_value()
-        
+    vibrationData = uaNode.get_data_value()
+    
     # create dictionary
     vibDict = dict()
+    vibrationStruct = vibrationData.Value.Value
+    vibDict['SourceTimestamp'] = vibrationData.SourceTimestamp
+    vibDict['ServerTimestamp'] = vibrationData.ServerTimestamp
     vibDict['y_ordinate'] = vibrationStruct.y_ordinate
     vibDict['x_abscissa'] = vibrationStruct.x_abscissa
     vibDict['sampleRate'] = vibrationStruct.sampleRate
@@ -127,7 +139,7 @@ def getTimeDomainVelocityData(client, macId, axis):
     vibDict['axis'] = vibrationStruct.axis
     vibDict['vUnits'] = vibrationStruct.vUnits
     vibDict['freqDomain'] = vibrationStruct.freqDomain
-        
+            
     return vibDict
     
 if __name__ == '__main__':
