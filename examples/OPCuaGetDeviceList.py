@@ -11,14 +11,22 @@ if __name__ == '__main__':
         client.connect()        
         
         # get device list and print result
+        nsIdx = client.get_namespace_index('http://www.iqunet.com')
         path = [ua.QualifiedName(name = 'Objects', namespaceidx = 0)]
         uaNode = client.get_root_node().get_child(path)
         nodes = uaNode.get_children()
-        deviceList = []
+        deviceList = dict()
         for n in nodes:
-            name = n.get_display_name().Text
-            if name != 'Server':
-                deviceList.append(name)
+            macId = n.get_display_name().Text
+            
+            if macId != 'Server':
+                bpath = []
+                bpath.append(ua.QualifiedName(name = 'Objects', namespaceidx = 0))
+                bpath.append(ua.QualifiedName(name = macId, namespaceidx = nsIdx))
+                bpath.append(ua.QualifiedName(name = "deviceTag", namespaceidx = nsIdx))  
+                uaNode2 = client.get_root_node().get_child(bpath)
+                deviceTag = uaNode2.get_value()
+                deviceList[macId] = deviceTag
         print(deviceList)
     
     finally:
