@@ -207,11 +207,11 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("opcua").setLevel(logging.WARNING)
 
-	# replace xx.xx.xx.xx with the IP address of your server
+    # replace xx.xx.xx.xx with the IP address of your server
     serverIP = "xx.xx.xx.xx"
     serverUrl = urlparse('opc.tcp://{:s}:4840'.format(serverIP))
 	
-	# replace xx:xx:xx:xx with your sensors macId
+    # replace xx:xx:xx:xx with your sensors macId
     macId = 'xx:xx:xx:xx'
 	
     starttime = pytz.utc.localize(
