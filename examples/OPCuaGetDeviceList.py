@@ -124,7 +124,6 @@ class DataAcquisition(object):
 				
     @staticmethod
     def get_device_list(serverUrl):
-        # get device list and print result
         deviceList = dict()
         with OpcUaClient(serverUrl) as client:
             for sensorNode in client.sensorList:
@@ -140,7 +139,7 @@ class DataAcquisition(object):
                     except Exception:
                         deviceList[macId] = 'Device'
                         continue
-        print(deviceList)
+        return deviceList
 
 
 if __name__ == "__main__":
@@ -151,6 +150,7 @@ if __name__ == "__main__":
     serverIP = "xx.xx.xx.xx"
     serverUrl = urlparse('opc.tcp://{:s}:4840'.format(serverIP))
 	
-    DataAcquisition.get_device_list(serverUrl=serverUrl)
+    deviceList = DataAcquisition.get_device_list(serverUrl=serverUrl)
+    print(deviceList)
     
 
