@@ -129,12 +129,12 @@ class DataAcquisition(object):
         with OpcUaClient(serverUrl) as client:
             for sensorNode in client.sensorList:
                 macId = client.get_browse_name(sensorNode).Name
-                tagPath = ua.QualifiedName(
-                    'deviceTag',
-                    sensorNode.nodeid.NamespaceIndex
-                )
                 if (client.get_node_class(sensorNode) is ua.NodeClass.Object) and ("server" not in macId.lower()):
                     try:
+			tagPath = ua.QualifiedName(
+                    	      'deviceTag',
+                    	       sensorNode.nodeid.NamespaceIndex
+                	)
                         deviceTag = client.get_child(sensorNode, tagPath).get_value()
                         deviceList[macId] = '{:s}'.format(deviceTag)
                     except Exception:
