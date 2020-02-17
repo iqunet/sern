@@ -1,3 +1,4 @@
+
 import time
 import sys
 import pytz
@@ -5,8 +6,10 @@ import logging
 import datetime
 from urllib.parse import urlparse
 import matplotlib.pyplot as plt
+import numpy
 
 from opcua import ua, Client
+
 
 class OpcUaClient(object):
     CONNECT_TIMEOUT = 15  # [sec]
@@ -82,11 +85,11 @@ class OpcUaClient(object):
     @Decorators.autoConnectingClient
     def get_browse_name(self, uaNode):
         return uaNode.get_browse_name()
-    
+
     @Decorators.autoConnectingClient
     def get_node_class(self, uaNode):
         return uaNode.get_node_class()
-    
+
     @Decorators.autoConnectingClient
     def get_namespace_index(self, uri):
         return self._client.get_namespace_index(uri)
@@ -127,6 +130,7 @@ class OpcUaClient(object):
         result = uaNode.server.history_read(params)[0]
         return result
 
+
 class DataAcquisition(object):
     LOGGER = logging.getLogger('DataAcquisition')
     MAX_VALUES_PER_ENDNODE = 100  # Num values per endnode
@@ -136,41 +140,59 @@ class DataAcquisition(object):
     def get_sensor_data(serverUrl, macId, browseName, starttime, endtime):
         with OpcUaClient(serverUrl) as client:
             assert(client._client.uaclient._uasocket.timeout == 15)
-            sensorNode = DataAcquisition.get_sensor_node(client, macId, browseName)
+            sensorNode = \
+                DataAcquisition.get_sensor_node(client, macId, browseName)
             DataAcquisition.LOGGER.info(
-				'Browsing {:s}'.format(macId)
-				)
-            (values, dates) = DataAcquisition.get_endnode_data(client, sensorNode, starttime, endtime)
+                    'Browsing {:s}'.format(macId)
+            )
+            (values, dates) = \
+                DataAcquisition.get_endnode_data(
+                        client=client,
+                        endNode=sensorNode,
+                        starttime=starttime,
+                        endtime=endtime
+                )
         return (values, dates)
-			
+
     @staticmethod
     def get_sensor_node(client, macId, browseName):
-        nsIdx = client.get_namespace_index('http://www.iqunet.com') # iQunet namespace index
+        nsIdx = client.get_namespace_index(
+                'http://www.iqunet.com'
+        )  # iQunet namespace index
         bpath = [
-			ua.QualifiedName(name = macId, namespaceidx = nsIdx),
-			ua.QualifiedName(name = browseName, namespaceidx = nsIdx)
+                ua.QualifiedName(name=macId, namespaceidx=nsIdx),
+                ua.QualifiedName(name=browseName, namespaceidx=nsIdx)
         ]
         sensorNode = client.objectsNode.get_child(bpath)
         return sensorNode
 
     @staticmethod
     def get_endnode_data(client, endNode, starttime, endtime):
-        dvList = DataAcquisition.download_endnode(client, endNode, starttime, endtime)
+        dvList = DataAcquisition.download_endnode(
+                client=client,
+                endNode=endNode,
+                starttime=starttime,
+                endtime=endtime
+        )
         dates, values = ([], [])
         for dv in dvList:
             dates.append(dv.SourceTimestamp.strftime('%Y-%m-%d %H:%M:%S'))
-            values.append(dv.Value.Value)      
+            values.append(dv.Value.Value)
 
         # If no starttime is given, results of read_raw_history are reversed.
         if starttime is None:
             values.reverse()
             dates.reverse()
-        return (values, dates) 
+        return (values, dates)
 
     @staticmethod
     def download_endnode(client, endNode, starttime, endtime):
         endNodeName = client.get_browse_name(endNode).Name
-        DataAcquisition.LOGGER.info('Downloading endnode {:s}'.format(endNodeName))
+        DataAcquisition.LOGGER.info(
+                'Downloading endnode {:s}'.format(
+                    endNodeName
+                )
+        )
         dvList, contId = [], None
         while True:
             remaining = DataAcquisition.MAX_VALUES_PER_ENDNODE - len(dvList)
@@ -201,19 +223,19 @@ class DataAcquisition(object):
                 break  # Too much data.
         sys.stdout.write('...OK.\n')
         return dvList
-		
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("opcua").setLevel(logging.WARNING)
 
     # replace xx.xx.xx.xx with the IP address of your server
-    serverIP = "xx.xx.xx.xx"
+    serverIP = "25.38.93.187"
     serverUrl = urlparse('opc.tcp://{:s}:4840'.format(serverIP))
-	
+
     # replace xx:xx:xx:xx with your sensors macId
-    macId = 'xx:xx:xx:xx'
-	
+    macId = '56:d8:a7:11'
+
     starttime = pytz.utc.localize(
         datetime.datetime.strptime("2020-02-01 00:00:00", '%Y-%m-%d %H:%M:%S')
     )
@@ -222,15 +244,17 @@ if __name__ == "__main__":
     )
 
     # acquire history data
-    (values,dates) = DataAcquisition.get_sensor_data(
+    (values, dates) = DataAcquisition.get_sensor_data(
         serverUrl=serverUrl,
         macId=macId,
-		browseName="accelerationPack",
+        browseName="accelerationPack",
         starttime=starttime,
         endtime=endtime
     )
-	
+
     # convert vibration data to 'g' units and plot data
+    print(numpy.shape(values))
+    print(numpy.shape(dates))
     data = [val[1:-6] for val in values]
     formatRanges = [val[-5] for val in values]
     for i in range(len(formatRanges)):
@@ -238,5 +262,3 @@ if __name__ == "__main__":
         plt.figure()
         plt.plot(data[i])
         plt.title(str(dates[i]))
-            
-    
