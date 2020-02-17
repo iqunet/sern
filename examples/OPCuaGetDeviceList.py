@@ -152,7 +152,7 @@ if __name__ == "__main__":
     logging.getLogger("opcua").setLevel(logging.WARNING)
 
     # replace xx.xx.xx.xx with the IP address of your server
-    serverIP = "25.38.93.187"
+    serverIP = "xx.xx.xx.xx"
     serverUrl = urlparse('opc.tcp://{:s}:4840'.format(serverIP))
     deviceList = DataAcquisition.get_device_list(serverUrl=serverUrl)
     print(deviceList)
