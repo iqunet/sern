@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 
 from opcua import ua, Client
 
+
 class OpcUaClient(object):
     CONNECT_TIMEOUT = 15  # [sec]
     RETRY_DELAY = 10  # [sec]
@@ -78,7 +79,7 @@ class OpcUaClient(object):
     @Decorators.autoConnectingClient
     def get_browse_name(self, uaNode):
         return uaNode.get_browse_name()
-    
+
     @Decorators.autoConnectingClient
     def get_node_class(self, uaNode):
         return uaNode.get_node_class()
@@ -119,22 +120,26 @@ class OpcUaClient(object):
         result = uaNode.server.history_read(params)[0]
         return result
 
+
 class DataAcquisition(object):
     LOGGER = logging.getLogger('DataAcquisition')
-				
+
     @staticmethod
     def get_device_list(serverUrl):
+        # get device list and print result
         deviceList = dict()
         with OpcUaClient(serverUrl) as client:
             for sensorNode in client.sensorList:
                 macId = client.get_browse_name(sensorNode).Name
-                if (client.get_node_class(sensorNode) is ua.NodeClass.Object) and ("server" not in macId.lower()):
+                if (client.get_node_class(sensorNode) is ua.NodeClass.Object) \
+                        and ("server" not in macId.lower()):
                     try:
-			tagPath = ua.QualifiedName(
-                    	      'deviceTag',
-                    	       sensorNode.nodeid.NamespaceIndex
-                	)
-                        deviceTag = client.get_child(sensorNode, tagPath).get_value()
+                        tagPath = ua.QualifiedName(
+                            'deviceTag',
+                            sensorNode.nodeid.NamespaceIndex
+                        )
+                        deviceTag = \
+                            client.get_child(sensorNode, tagPath).get_value()
                         deviceList[macId] = '{:s}'.format(deviceTag)
                     except Exception:
                         deviceList[macId] = 'Device'
@@ -147,10 +152,7 @@ if __name__ == "__main__":
     logging.getLogger("opcua").setLevel(logging.WARNING)
 
     # replace xx.xx.xx.xx with the IP address of your server
-    serverIP = "xx.xx.xx.xx"
+    serverIP = "25.38.93.187"
     serverUrl = urlparse('opc.tcp://{:s}:4840'.format(serverIP))
-	
     deviceList = DataAcquisition.get_device_list(serverUrl=serverUrl)
     print(deviceList)
-    
-
