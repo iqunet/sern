@@ -126,7 +126,6 @@ class DataAcquisition(object):
 
     @staticmethod
     def get_device_list(serverUrl):
-        # get device list and print result
         deviceList = dict()
         with OpcUaClient(serverUrl) as client:
             for sensorNode in client.sensorList:
