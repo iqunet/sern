@@ -1,76 +1,171 @@
 # requires iQunet version > 1.2.2
-# install gql from github (pip install -e git+git://github.com/graphql-python/gql.git#egg=gql)
+# install gql from github:
+# (pip install -e git+git://github.com/graphql-python/gql.git#egg=gql)
+
+import logging
+from urllib.parse import urlparse
+import time
+import matplotlib.pyplot as plt
 
 from gql import Client, gql
 from gql.transport.requests import RequestsHTTPTransport
 import requests
 
-import matplotlib.pyplot as plt
 
-def createClient(url):
-    host = url.split('//')[1].split('/')[0]
-    request = requests.get(url,
-                           headers={
-                               'Host': str(host),
-                               'Accept': 'text/html',
-                           })
-    request.raise_for_status()
-    csrf = request.cookies['csrftoken']
+class GraphQLClient(object):
+    CONNECT_TIMEOUT = 15  # [sec]
+    RETRY_DELAY = 10  # [sec]
+    MAX_RETRIES = 3  # [-]
 
-    client = Client(
-        transport=RequestsHTTPTransport(url=url,
-                                        cookies={"csrftoken": csrf},
-                                        headers={'x-csrftoken':  csrf}),
-        fetch_schema_from_transport=True
-    ) 
-    return client
-    
-def executeQuery(client, querytext):
-    query = gql(querytext)
-    result = client.execute(query)
-    return result
+    class Decorators(object):
+        @staticmethod
+        def autoConnectingClient(wrappedMethod):
+            def wrapper(obj, *args, **kwargs):
+                for retry in range(GraphQLClient.MAX_RETRIES):
+                    try:
+                        return wrappedMethod(obj, *args, **kwargs)
+                    except Exception:
+                        pass
+                    try:
+                        obj._logger.warning(
+                                '(Re)connecting to GraphQL service.'
+                        )
+                        obj.reconnect()
+                    except ConnectionRefusedError:
+                        obj._logger.warn(
+                            'Connection refused. Retry in 10s.'.format(
+                                GraphQLClient.RETRY_DELAY
+                            )
+                        )
+                        time.sleep(GraphQLClient.RETRY_DELAY)
+                else:  # So the exception is exposed.
+                    obj.reconnect()
+                    return wrappedMethod(obj, *args, **kwargs)
+            return wrapper
 
-if __name__ == '__main__':
-    
-    # create client (replace xx.xx.xx.xx with the IP address of your server)
-    client = createClient('http://xx.xx.xx.xx:8000/graphql')
-    
-    # construct query to retrieve vibration time stamps
-    # replace macId xx:xx:xx:xx with the macId of your sensor
-    # replace start and end with the desired start and end dates
-    # limit limits the number of dates returned
-    # axis allows to select data from only 1 or multiple axes
-    querytext = '''
-    { deviceManager { device(macId:"xx:xx:xx:xx") {
-    __typename
-    ... on GrapheneVibrationCombo {vibrationTimestampHistory(start:"2019-01-01T00:00:00.000000+00:00", end:"2019-02-01T00:00:00.000000+00:00", limit:100, axis:"X")}
-    }}}
-    '''
-    
-    # execute query and retrieve vibration time stamps
-    result = executeQuery(client, querytext)
-    times = result['deviceManager']['device']['vibrationTimestampHistory']
-    print(times)
-    
-    # retrieve vibration data according to the vibration time stamps and plot data
-    # replace macId xx:xx:xx:xx with the macId of your sensor
-    for t in times:
-        # construct query
+    def __init__(self, serverUrl):
+        self._logger = logging.getLogger(self.__class__.__name__)
+        self.connect(
+            serverUrl.geturl()
+        )
+
+    def __enter__(self):
+        self.connect(
+            serverUrl.geturl()
+        )
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self._client = None
+
+    def connect(self, url):
+        host = url.split('//')[1].split('/')[0]
+        request = requests.get(url,
+                               headers={
+                                       'Host': str(host),
+                                       'Accept': 'text/html',
+                                       }
+                               )
+        request.raise_for_status()
+        csrf = request.cookies['csrftoken']
+        self._client = Client(
+                transport=RequestsHTTPTransport(url=url,
+                                                cookies={"csrftoken": csrf},
+                                                headers={'x-csrftoken':  csrf}
+                                                ),
+                fetch_schema_from_transport=True
+                )
+
+    def disconnect(self):
+        self._client = None
+
+    def reconnect(self):
+        self.disconnect()
+        self.connect(
+            serverUrl.geturl()
+        )
+
+    @Decorators.autoConnectingClient
+    def execute_query(self, querytext):
+        query = gql(querytext)
+        return self._client.execute(query)
+
+
+class DataAcquisition(object):
+    LOGGER = logging.getLogger('DataAcquisition')
+
+    @staticmethod
+    def get_sensor_data(serverUrl, macId, starttime, endtime, limit, axis):
+        with GraphQLClient(serverUrl) as client:
+            querytext = '''
+			{ deviceManager { device(macId:"''' + macId + '''") {
+                __typename
+                ... on GrapheneVibrationCombo {vibrationTimestampHistory(start:"''' + str(starttime) + '''", end:"''' + str(endtime) + '''", limit:''' + str(limit) + ''', axis:"''' + axis + '''")}
+            }}}
+            '''
+            result = client.execute_query(querytext)
+            times = \
+                result['deviceManager']['device']['vibrationTimestampHistory']
+            dates, values, franges = ([], [], [])
+            for t in times:
+                result = DataAcquisition.get_sensor_measurement(
+                        client,
+                        macId,
+                        t
+                )
+                dates.append(t)
+                deviceData = result['deviceManager']['device']
+                values.append(
+                        deviceData['vibrationArray']['rawSamples']
+                )
+                franges.append(
+                        deviceData['vibrationArray']['formatRange']
+                )
+            return (values, dates, franges)
+
+    @staticmethod
+    def get_sensor_measurement(client, macId, isoDate):
         querytext = '''
-        { deviceManager { device(macId:"xx:xx:xx:xx") {
+        { deviceManager { device(macId:"''' + macId + '''") {
         __typename
-        ... on GrapheneVibrationCombo { vibrationArray(isoDate: "''' + t + '''") {
+        ... on GrapheneVibrationCombo { vibrationArray(isoDate: "''' + isoDate + '''") {
         numSamples rawSamples sampleRate formatRange axis }}
         }}}
         '''
-        # execute query
-        result = executeQuery(client, querytext)
-        # retrieve raw acceleration data and format range
-        data = result['deviceManager']['device']['vibrationArray']['rawSamples']
-        frange = result['deviceManager']['device']['vibrationArray']['formatRange']
-        # convert raw acceleration data to 'g' units
-        data = [d/512.0*frange for d in data]
-        # plot data
+        return client.execute_query(querytext)
+
+
+if __name__ == '__main__':
+
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger("graphql").setLevel(logging.WARNING)
+
+    # replace xx.xx.xx.xx with the IP address of your server
+    serverIP = "xx.xx.xx.xx"
+    serverUrl = urlparse('http://{:s}:8000/graphql'.format(serverIP))
+
+    # replace xx:xx:xx:xx with your sensors macId
+    macId = 'xx:xx:xx:xx'
+
+    starttime = "2020-02-01"
+    endtime = "2020-02-24"
+
+    limit = 10  # limit limits the number of returned measurements
+    axis = 'XYZ'  # axis allows to select data from only 1 or multiple axes
+
+    # acquire history data
+    (values, dates, franges) = DataAcquisition.get_sensor_data(
+            serverUrl=serverUrl,
+            macId=macId,
+            starttime=starttime,
+            endtime=endtime,
+            limit=limit,
+            axis=axis
+    )
+
+    # convert vibration data to 'g' units and plot data
+    for i in range(len(franges)):
+        values[i] = [d/512.0*franges[i] for d in values[i]]
         plt.figure()
-        plt.plot(data)
-        plt.title(str(t))
+        plt.plot(values[i])
+        plt.title(str(dates[i]))
