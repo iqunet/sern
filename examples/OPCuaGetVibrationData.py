@@ -253,8 +253,6 @@ if __name__ == "__main__":
     )
 
     # convert vibration data to 'g' units and plot data
-    print(numpy.shape(values))
-    print(numpy.shape(dates))
     data = [val[1:-6] for val in values]
     formatRanges = [val[-5] for val in values]
     for i in range(len(formatRanges)):
