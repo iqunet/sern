@@ -1,4 +1,4 @@
-![iQunet logo](https://user-images.githubusercontent.com/36883064/75974926-ea4b3b80-5ed7-11ea-8e3a-f0ceb91ff560.jpg)
+![iQunet logo](https://user-images.githubusercontent.com/36883064/75975172-4f069600-5ed8-11ea-8b56-72ea6e945c92.jpg)
 
 
 # sern: iQunet Sensor Network
