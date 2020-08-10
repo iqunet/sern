@@ -297,7 +297,7 @@ if __name__ == "__main__":
     serverUrl = urlparse('opc.tcp://{:s}:4840'.format(serverIP))
 
     # replace xx:xx:xx:xx with your sensors macId
-    macId = 'xx:xx:xx:x'
+    macId = 'xx:xx:xx:xx'
 
     starttime = pytz.utc.localize(
         datetime.datetime.strptime("2020-02-01 00:00:00", '%Y-%m-%d %H:%M:%S')
@@ -315,10 +315,8 @@ if __name__ == "__main__":
         endtime=endtime
     )
 
-    # convert vibration data to 'g' units and plot data
-    data = [val[1:-6] for val in values]
-    formatRanges = [val[-5] for val in values]
-    for i in range(len(formatRanges)):
+    # plot data
+    for i in range(len(dates)):
         plt.figure()
-        plt.plot(data[i])
+        plt.plot(values[i])
         plt.title(str(dates[i]))
