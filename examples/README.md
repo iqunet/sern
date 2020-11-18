@@ -7,6 +7,8 @@
 
 [GraphQLGetVibrationData.py](https://github.com/iqunet/sern/blob/master/examples/GraphQLGetVibrationData.py) Uses GQL to retrieve and plot vibration data of a specific time period.
 
+[GraphQLmutations.py](https://github.com/iqunet/sern/blob/master/examples/GraphQLmutations.py) Uses GQL to perform some example mutations on a vibration sensor.
+
 ### Javascript
 [GraphQLGetDeviceList.js](https://github.com/iqunet/sern/blob/master/examples/GraphQLGetDeviceList.js) Uses graphql-request to retrieve the list of devices connected to your server.
 
