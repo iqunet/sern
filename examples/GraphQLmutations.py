@@ -138,6 +138,30 @@ class DataMutation(object):
                 }
             '''
             return client.execute_query(querytext)
+        
+    @staticmethod
+    def set_queue_enabled(serverUrl, macId, enabled):
+        with GraphQLClient(serverUrl) as client:
+            querytext = '''
+            mutation {
+                setQueueEnabled(enabled:''' + enabled + ''',macId: "''' + macId + '''"){
+                    ok
+                    }
+                }
+            '''
+            return client.execute_query(querytext)
+        
+    @staticmethod
+    def set_queue_interval(serverUrl, macId, interval):
+        with GraphQLClient(serverUrl) as client:
+            querytext = '''
+            mutation {
+                setQueueInterval(interval:''' + str(interval) + ''',macId: "''' + macId + '''"){
+                    ok
+                    }
+                }
+            '''
+            return client.execute_query(querytext)
 
 if __name__ == '__main__':
 
@@ -185,5 +209,21 @@ if __name__ == '__main__':
             threshold = 0,
             axis = "XYZ",
             numSamples=1024
+    )
+    print(result)
+    
+    # set queue enabled
+    result = DataMutation.set_queue_enabled(
+            serverUrl=serverUrl,
+            macId=macId,
+            enabled="true"
+    )
+    print(result)
+    
+    # set queue interval
+    result = DataMutation.set_queue_interval(
+            serverUrl=serverUrl,
+            macId=macId,
+            interval=300
     )
     print(result)
