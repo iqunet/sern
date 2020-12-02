@@ -120,7 +120,7 @@ class DataMutation(object):
         with GraphQLClient(serverUrl) as client:
             querytext = '''
             mutation {
-                setNumSamples(numSamples:''' + str(numSamples) + ''',macId:"''' + macId + '''"){
+                setNumSamples(macId:"''' + macId + '''", numSamples:''' + str(numSamples) + '''){
                     ok
                     }
                 }
@@ -162,6 +162,7 @@ class DataMutation(object):
                 }
             '''
             return client.execute_query(querytext)
+
 
 if __name__ == '__main__':
 
