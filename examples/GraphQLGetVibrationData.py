@@ -5,8 +5,11 @@
 import logging
 from urllib.parse import urlparse
 import time
+from datetime import datetime
+from dateutil import parser
+import pytz
 import matplotlib.pyplot as plt
-
+import numpy as np
 from gql import Client, gql
 from gql.transport.requests import RequestsHTTPTransport
 import requests
@@ -106,7 +109,7 @@ class DataAcquisition(object):
             result = client.execute_query(querytext)
             times = \
                 result['deviceManager']['device']['vibrationTimestampHistory']
-            dates, values, franges = ([], [], [])
+            dates, values, fRanges, numSamples, sampleRates = ([], [], [], [], [])
             for t in times:
                 result = DataAcquisition.get_sensor_measurement(
                         client,
@@ -118,10 +121,16 @@ class DataAcquisition(object):
                 values.append(
                         deviceData['vibrationArray']['rawSamples']
                 )
-                franges.append(
+                fRanges.append(
                         deviceData['vibrationArray']['formatRange']
                 )
-            return (values, dates, franges)
+                numSamples.append(
+                        deviceData['vibrationArray']['numSamples']
+                )
+                sampleRates.append(
+                        deviceData['vibrationArray']['sampleRate']
+                )
+            return (values, dates, fRanges, numSamples, sampleRates)
 
     @staticmethod
     def get_sensor_measurement(client, macId, isoDate):
@@ -147,25 +156,31 @@ if __name__ == '__main__':
     # replace xx:xx:xx:xx with your sensors macId
     macId = 'xx:xx:xx:xx'
 
-    starttime = "2020-02-01"
-    endtime = "2020-02-24"
-
-    limit = 10  # limit limits the number of returned measurements
+    # change settings for your application
+    startTime = "2021-02-01"
+    endTime = "2021-02-24"
+    timeZone = "Europe/Brussels"
+    limit = 6  # limit limits the number of returned measurements
     axis = 'XYZ'  # axis allows to select data from only 1 or multiple axes
 
     # acquire history data
-    (values, dates, franges) = DataAcquisition.get_sensor_data(
+    (values, dates, fRanges, numSamples, sampleRates) = DataAcquisition.get_sensor_data(
             serverUrl=serverUrl,
             macId=macId,
-            starttime=starttime,
-            endtime=endtime,
+            starttime=startTime,
+            endtime=endTime,
             limit=limit,
             axis=axis
     )
 
     # convert vibration data to 'g' units and plot data
-    for i in range(len(franges)):
-        values[i] = [d/512.0*franges[i] for d in values[i]]
+    for i in range(len(fRanges)):
+        values[i] = [d/512.0*fRanges[i] for d in values[i]]
+        timeValues = np.arange(0, numSamples[i]/sampleRates[i], 1/sampleRates[i])
         plt.figure()
-        plt.plot(values[i])
-        plt.title(str(dates[i]))
+        plt.plot(timeValues, values[i])
+        title = parser.parse(dates[i]).astimezone(pytz.timezone(timeZone)).strftime("%Y-%m-%d %H:%M:%S.%f")
+        plt.title(title)
+        plt.xlabel('Time [s]')
+        plt.ylabel('RMS Acceleration [g]')
+        
