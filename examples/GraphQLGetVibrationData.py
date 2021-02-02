@@ -5,11 +5,14 @@
 import logging
 from urllib.parse import urlparse
 import time
-from datetime import datetime
+
+import datetime
 from dateutil import parser
 import pytz
+
 import matplotlib.pyplot as plt
 import numpy as np
+
 from gql import Client, gql
 from gql.transport.requests import RequestsHTTPTransport
 import requests
@@ -156,10 +159,10 @@ if __name__ == '__main__':
     # replace xx:xx:xx:xx with your sensors macId
     macId = 'xx:xx:xx:xx'
 
-    # change settings for your application
+    # change settings
     startTime = "2021-02-01"
     endTime = "2021-02-24"
-    timeZone = "Europe/Brussels"
+    timeZone = "Europe/Brussels" # local time zone
     limit = 6  # limit limits the number of returned measurements
     axis = 'XYZ'  # axis allows to select data from only 1 or multiple axes
 
@@ -179,7 +182,9 @@ if __name__ == '__main__':
         timeValues = np.arange(0, numSamples[i]/sampleRates[i], 1/sampleRates[i])
         plt.figure()
         plt.plot(timeValues, values[i])
-        title = parser.parse(dates[i]).astimezone(pytz.timezone(timeZone)).strftime("%Y-%m-%d %H:%M:%S.%f")
+        title = parser.parse(dates[i]).astimezone(pytz.timezone(timeZone))
+        title = (title + datetime.timedelta(seconds=.5)).replace(microsecond=0)
+        title = title.strftime("%a %b %d %Y %H:%M:%S")
         plt.title(title)
         plt.xlabel('Time [s]')
         plt.ylabel('RMS Acceleration [g]')
