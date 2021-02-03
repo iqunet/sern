@@ -4,19 +4,55 @@
 
 import logging
 from urllib.parse import urlparse
-import time
 
+import time
 import datetime
 from dateutil import parser
 import pytz
 
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.signal
 
 from gql import Client, gql
 from gql.transport.requests import RequestsHTTPTransport
 import requests
 
+class HighPassFilter(object):
+
+    @staticmethod
+    def get_highpass_coefficients(lowcut, sampleRate, order=5):
+        nyq = 0.5 * sampleRate
+        low = lowcut / nyq
+        b, a = scipy.signal.butter(order, [low], btype='highpass')
+        return b, a
+
+    @staticmethod
+    def run_highpass_filter(data, lowcut, sampleRate, order=5):
+        if lowcut >= sampleRate/2.0:
+            return data*0.0
+        b, a = HighPassFilter.get_highpass_coefficients(lowcut, sampleRate, order=order)
+        y = scipy.signal.filtfilt(b, a, data, padtype='even')
+        return y
+    
+    @staticmethod
+    def perform_hpf_filtering(data, sampleRate, hpf=3):
+        if hpf == 0:
+            return data
+        data[0:6] = data[13:7:-1] # skip compressor settling
+        data = HighPassFilter.run_highpass_filter(
+            data=data,
+            lowcut=3,
+            sampleRate=sampleRate,
+            order=1,
+        )
+        data = HighPassFilter.run_highpass_filter(
+            data=data,
+            lowcut=int(hpf),
+            sampleRate=sampleRate,
+            order=2,
+        )
+        return data
 
 class GraphQLClient(object):
     CONNECT_TIMEOUT = 15  # [sec]
@@ -160,10 +196,11 @@ if __name__ == '__main__':
     macId = 'xx:xx:xx:xx'
 
     # change settings
+    hpf = 3 # high pass filter (Hz)
     startTime = "2021-02-01"
     endTime = "2021-02-24"
     timeZone = "Europe/Brussels" # local time zone
-    limit = 6  # limit limits the number of returned measurements
+    limit = 6 # limit limits the number of returned measurements
     axis = 'XYZ'  # axis allows to select data from only 1 or multiple axes
 
     # acquire history data
@@ -179,13 +216,23 @@ if __name__ == '__main__':
     # convert vibration data to 'g' units and plot data
     for i in range(len(fRanges)):
         values[i] = [d/512.0*fRanges[i] for d in values[i]]
-        timeValues = np.arange(0, numSamples[i]/sampleRates[i], 1/sampleRates[i])
+        maxTimeValue = numSamples[i]/sampleRates[i]
+        stepSize = 1/sampleRates[i]
+        timeValues = np.arange(0, maxTimeValue, stepSize)
+        
+        values[i] = HighPassFilter.perform_hpf_filtering(
+            data=values[i],
+            sampleRate=sampleRates[i], 
+            hpf=hpf
+        )
+        
         plt.figure()
         plt.plot(timeValues, values[i])
         title = parser.parse(dates[i]).astimezone(pytz.timezone(timeZone))
         title = (title + datetime.timedelta(seconds=.5)).replace(microsecond=0)
         title = title.strftime("%a %b %d %Y %H:%M:%S")
         plt.title(title)
+        plt.xlim((0, maxTimeValue)) 
         plt.xlabel('Time [s]')
         plt.ylabel('RMS Acceleration [g]')
         
