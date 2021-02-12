@@ -243,7 +243,30 @@ class DataAcquisition(object):
         }}}
         '''
         return client.execute_query(querytext)
-
+    
+    @staticmethod
+    def get_temperature_data(serverUrl, macId, timeZone):
+        with GraphQLClient(serverUrl) as client:
+            result = DataAcquisition.get_temperature_measurement(
+                    client,
+                    macId
+            )
+            tz = pytz.timezone(timeZone) 
+            date = datetime.datetime.now(tz)
+            date = date.strftime("%a %b %d %Y %H:%M:%S")
+            deviceData = result['deviceManager']['device']
+            temperature = deviceData['temperature']
+            return (date, temperature)
+    
+    @staticmethod
+    def get_temperature_measurement(client, macId):
+        querytext = '''
+        { deviceManager { device(macId:"''' + macId + '''") {
+        __typename
+        ... on GrapheneVibrationCombo { temperature }
+        }}}
+        '''
+        return client.execute_query(querytext)
 
 if __name__ == '__main__':
 
@@ -262,7 +285,7 @@ if __name__ == '__main__':
     startTime = "2021-02-10"
     endTime = "2021-02-24"
     timeZone = "Europe/Brussels" # local time zone
-    limit = 6 # limit limits the number of returned measurements
+    limit = 4 # limit limits the number of returned measurements
     axis = 'XYZ'  # axis allows to select data from only 1 or multiple axes
 
     # acquire history data
@@ -322,3 +345,9 @@ if __name__ == '__main__':
         plt.xlabel('Frequency [Hz]')
         plt.ylabel('RMS Acceleration [g]')
         
+    # acquire board temperature
+    (date, temperature) = DataAcquisition.get_temperature_data(
+        serverUrl=serverUrl, 
+        macId=macId, 
+        timeZone=timeZone)
+    print(date + ' : ' + str(temperature))
