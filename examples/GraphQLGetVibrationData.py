@@ -12,6 +12,7 @@ import pytz
 
 import matplotlib.pyplot as plt
 import numpy as np
+import math
 import scipy.signal
 
 from gql import Client, gql
@@ -53,6 +54,67 @@ class HighPassFilter(object):
             order=2,
         )
         return data
+    
+class FourierTransform(object):
+
+    @staticmethod
+    def perform_fft_windowed(signal, fs, winSize, nOverlap, window, detrend = True, mode = 'lin'):
+        assert(nOverlap < winSize)
+        assert(mode in ('magnitudeRMS', 'magnitudePeak', 'lin', 'log'))
+    
+        # Compose window and calculate 'coherent gain scale factor'
+        w = scipy.signal.get_window(window, winSize)
+        # http://www.bores.com/courses/advanced/windows/files/windows.pdf
+        # Bores signal processing: "FFT window functions: Limits on FFT analysis"
+        # F. J. Harris, "On the use of windows for harmonic analysis with the
+        # discrete Fourier transform," in Proceedings of the IEEE, vol. 66, no. 1,
+        # pp. 51-83, Jan. 1978.
+        coherentGainScaleFactor = np.sum(w)/winSize
+    
+        # Zero-pad signal if smaller than window
+        padding = len(w) - len(signal)
+        if padding > 0:
+            signal = np.pad(signal, (0,padding), 'constant')
+    
+        # Number of windows
+        k = int(np.fix((len(signal)-nOverlap)/(len(w)-nOverlap)))
+    
+        # Calculate psd
+        j = 0
+        spec = np.zeros(len(w));
+        for i in range(0, k):
+            segment = signal[j:j+len(w)]
+            if detrend is True:
+                segment = scipy.signal.detrend(segment)
+            winData = segment*w
+            # Calculate FFT, divide by sqrt(N) for power conservation,
+            # and another sqrt(N) for RMS amplitude spectrum.
+            fftData = np.fft.fft(winData, len(w))/len(w)
+            sqAbsFFT = abs(fftData/coherentGainScaleFactor)**2
+            spec = spec + sqAbsFFT;
+            j = j + len(w) - nOverlap
+    
+        # Scale for number of windows
+        spec = spec/k
+    
+        # If signal is not complex, select first half
+        if len(np.where(np.iscomplex(signal))[0]) == 0:
+            stop = int(math.ceil(len(w)/2.0))
+            # Multiply by 2, except for DC and fmax. It is asserted that N is even.
+            spec[1:stop-1] = 2*spec[1:stop-1]
+        else:
+            stop = len(w)
+        spec = spec[0:stop]
+        freq = np.round(float(fs)/len(w)*np.arange(0, stop), 2)
+    
+        if mode == 'lin': # Linear Power spectrum
+            return (spec, freq)
+        elif mode == 'log': # Log Power spectrum
+            return (10.*np.log10(spec), freq)
+        elif mode == 'magnitudeRMS': # RMS Magnitude spectrum
+            return (np.sqrt(spec), freq)
+        elif mode == 'magnitudePeak': # Peak Magnitude spectrum
+            return (np.sqrt(2.*spec), freq)
 
 class GraphQLClient(object):
     CONNECT_TIMEOUT = 15  # [sec]
@@ -197,7 +259,7 @@ if __name__ == '__main__':
 
     # change settings
     hpf = 3 # high pass filter (Hz)
-    startTime = "2021-02-01"
+    startTime = "2021-02-10"
     endTime = "2021-02-24"
     timeZone = "Europe/Brussels" # local time zone
     limit = 6 # limit limits the number of returned measurements
@@ -226,6 +288,7 @@ if __name__ == '__main__':
             hpf=hpf
         )
         
+        # plot time domain
         plt.figure()
         plt.plot(timeValues, values[i])
         title = parser.parse(dates[i]).astimezone(pytz.timezone(timeZone))
@@ -234,5 +297,28 @@ if __name__ == '__main__':
         plt.title(title)
         plt.xlim((0, maxTimeValue)) 
         plt.xlabel('Time [s]')
+        plt.ylabel('RMS Acceleration [g]')
+        
+        #plot frequency domain
+        plt.figure()
+        windowSize = len(values[i]) # window size
+        nOverlap   = 0 # overlap window
+        windowType = 'hann' # hanning window     
+        mode       = 'magnitudeRMS' # RMS magnitude spectrum.
+        (npFFT, npFreqs) = FourierTransform.perform_fft_windowed(
+            signal=values[i], 
+            fs=sampleRates[i],
+            winSize=windowSize,
+            nOverlap=nOverlap, 
+            window=windowType, 
+            detrend = False, 
+            mode = mode)
+        plt.plot(npFreqs, npFFT)
+        plt.title(title)
+        plt.xlim((0, sampleRates[i]/2)) 
+        viewPortOptions = [0.1, 0.2, 0.5, 1, 2, 4, 8, 16]
+        viewPort = [i for i in viewPortOptions if i >= max(npFFT)][0]
+        plt.ylim((0,viewPort))
+        plt.xlabel('Frequency [Hz]')
         plt.ylabel('RMS Acceleration [g]')
         
