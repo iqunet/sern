@@ -1,4 +1,3 @@
-
 import time
 import sys
 import pytz
@@ -6,10 +5,109 @@ import logging
 import datetime
 from urllib.parse import urlparse
 import matplotlib.pyplot as plt
-import numpy
+import numpy as np
+import scipy.signal
+import math
+import matplotlib.dates as mdates
 
 from opcua import ua, Client
 
+class HighPassFilter(object):
+
+    @staticmethod
+    def get_highpass_coefficients(lowcut, sampleRate, order=5):
+        nyq = 0.5 * sampleRate
+        low = lowcut / nyq
+        b, a = scipy.signal.butter(order, [low], btype='highpass')
+        return b, a
+
+    @staticmethod
+    def run_highpass_filter(data, lowcut, sampleRate, order=5):
+        if lowcut >= sampleRate/2.0:
+            return data*0.0
+        b, a = HighPassFilter.get_highpass_coefficients(lowcut, sampleRate, order=order)
+        y = scipy.signal.filtfilt(b, a, data, padtype='even')
+        return y
+    
+    @staticmethod
+    def perform_hpf_filtering(data, sampleRate, hpf=3):
+        if hpf == 0:
+            return data
+        data[0:6] = data[13:7:-1] # skip compressor settling
+        data = HighPassFilter.run_highpass_filter(
+            data=data,
+            lowcut=3,
+            sampleRate=sampleRate,
+            order=1,
+        )
+        data = HighPassFilter.run_highpass_filter(
+            data=data,
+            lowcut=int(hpf),
+            sampleRate=sampleRate,
+            order=2,
+        )
+        return data
+    
+class FourierTransform(object):
+
+    @staticmethod
+    def perform_fft_windowed(signal, fs, winSize, nOverlap, window, detrend = True, mode = 'lin'):
+        assert(nOverlap < winSize)
+        assert(mode in ('magnitudeRMS', 'magnitudePeak', 'lin', 'log'))
+    
+        # Compose window and calculate 'coherent gain scale factor'
+        w = scipy.signal.get_window(window, winSize)
+        # http://www.bores.com/courses/advanced/windows/files/windows.pdf
+        # Bores signal processing: "FFT window functions: Limits on FFT analysis"
+        # F. J. Harris, "On the use of windows for harmonic analysis with the
+        # discrete Fourier transform," in Proceedings of the IEEE, vol. 66, no. 1,
+        # pp. 51-83, Jan. 1978.
+        coherentGainScaleFactor = np.sum(w)/winSize
+    
+        # Zero-pad signal if smaller than window
+        padding = len(w) - len(signal)
+        if padding > 0:
+            signal = np.pad(signal, (0,padding), 'constant')
+    
+        # Number of windows
+        k = int(np.fix((len(signal)-nOverlap)/(len(w)-nOverlap)))
+    
+        # Calculate psd
+        j = 0
+        spec = np.zeros(len(w));
+        for i in range(0, k):
+            segment = signal[j:j+len(w)]
+            if detrend is True:
+                segment = scipy.signal.detrend(segment)
+            winData = segment*w
+            # Calculate FFT, divide by sqrt(N) for power conservation,
+            # and another sqrt(N) for RMS amplitude spectrum.
+            fftData = np.fft.fft(winData, len(w))/len(w)
+            sqAbsFFT = abs(fftData/coherentGainScaleFactor)**2
+            spec = spec + sqAbsFFT;
+            j = j + len(w) - nOverlap
+    
+        # Scale for number of windows
+        spec = spec/k
+    
+        # If signal is not complex, select first half
+        if len(np.where(np.iscomplex(signal))[0]) == 0:
+            stop = int(math.ceil(len(w)/2.0))
+            # Multiply by 2, except for DC and fmax. It is asserted that N is even.
+            spec[1:stop-1] = 2*spec[1:stop-1]
+        else:
+            stop = len(w)
+        spec = spec[0:stop]
+        freq = np.round(float(fs)/len(w)*np.arange(0, stop), 2)
+    
+        if mode == 'lin': # Linear Power spectrum
+            return (spec, freq)
+        elif mode == 'log': # Log Power spectrum
+            return (10.*np.log10(spec), freq)
+        elif mode == 'magnitudeRMS': # RMS Magnitude spectrum
+            return (np.sqrt(spec), freq)
+        elif mode == 'magnitudePeak': # Peak Magnitude spectrum
+            return (np.sqrt(2.*spec), freq)
 
 class OpcUaClient(object):
     CONNECT_TIMEOUT = 15  # [sec]
@@ -130,7 +228,6 @@ class OpcUaClient(object):
         result = uaNode.server.history_read(params)[0]
         return result
 
-
 class DataAcquisition(object):
     LOGGER = logging.getLogger('DataAcquisition')
     MAX_VALUES_PER_ENDNODE = 100  # Num values per endnode
@@ -235,14 +332,21 @@ if __name__ == "__main__":
 
     # replace xx:xx:xx:xx with your sensors macId
     macId = 'xx:xx:xx:xx'
-
+    
+    # change settings
+    hpf = 3 # high pass filter (Hz)
+    startTime = "2021-02-15 00:00:00"
+    endTime = "2021-02-15 10:00:00"
+    timeZone = "Europe/Brussels" # local time zone
+    
+    # format start and end time
     starttime = pytz.utc.localize(
-        datetime.datetime.strptime("2020-02-01 00:00:00", '%Y-%m-%d %H:%M:%S')
+        datetime.datetime.strptime(startTime, '%Y-%m-%d %H:%M:%S')
     )
     endtime = pytz.utc.localize(
-        datetime.datetime.strptime("2020-02-24 00:00:00", '%Y-%m-%d %H:%M:%S')
+        datetime.datetime.strptime(endTime, '%Y-%m-%d %H:%M:%S')
     )
-
+    
     # acquire history data
     (values, dates) = DataAcquisition.get_sensor_data(
         serverUrl=serverUrl,
@@ -254,9 +358,72 @@ if __name__ == "__main__":
 
     # convert vibration data to 'g' units and plot data
     data = [val[1:-6] for val in values]
+    numSamples = [val[0] for val in values]
+    sampleRates = [val[-6] for val in values]
     formatRanges = [val[-5] for val in values]
+    axes = [val[-3] for val in values]
     for i in range(len(formatRanges)):
         data[i] = [d/512.0*formatRanges[i] for d in data[i]]
+        maxTimeValue = numSamples[i]/sampleRates[i]
+        stepSize = 1/sampleRates[i]
+        timeValues = np.arange(0, maxTimeValue, stepSize)
+        
+        data[i] = HighPassFilter.perform_hpf_filtering(
+            data=data[i],
+            sampleRate=sampleRates[i], 
+            hpf=hpf
+        )
+        
+        # plot time domain
         plt.figure()
-        plt.plot(data[i])
-        plt.title(str(dates[i]))
+        plt.plot(timeValues, data[i])
+        title = datetime.datetime.strptime(dates[i], '%Y-%m-%d %H:%M:%S')
+        title = title.replace(tzinfo=pytz.timezone('UTC')).astimezone(pytz.timezone(timeZone))
+        title = title.strftime("%a %b %d %Y %H:%M:%S")        
+        plt.title(title)
+        plt.xlim((0, maxTimeValue)) 
+        plt.xlabel('Time [s]')
+        plt.ylabel('RMS Acceleration [g]')
+        
+        #plot frequency domain
+        plt.figure()
+        windowSize = len(data[i]) # window size
+        nOverlap   = 0 # overlap window
+        windowType = 'hann' # hanning window     
+        mode       = 'magnitudeRMS' # RMS magnitude spectrum.
+        (npFFT, npFreqs) = FourierTransform.perform_fft_windowed(
+            signal=data[i], 
+            fs=sampleRates[i],
+            winSize=windowSize,
+            nOverlap=nOverlap, 
+            window=windowType, 
+            detrend = False, 
+            mode = mode)
+        plt.plot(npFreqs, npFFT)
+        plt.title(title)
+        plt.xlim((0, sampleRates[i]/2)) 
+        viewPortOptions = [0.1, 0.2, 0.5, 1, 2, 4, 8, 16]
+        viewPort = [i for i in viewPortOptions if i >= max(npFFT)][0]
+        plt.ylim((0,viewPort))
+        plt.xlabel('Frequency [Hz]')
+        plt.ylabel('RMS Acceleration [g]')
+        
+    # acquire board temperature
+    (temperatures, dates) = DataAcquisition.get_sensor_data(
+        serverUrl=serverUrl,
+        macId=macId,
+        browseName="boardTemperature",
+        starttime=starttime,
+        endtime=endtime
+    )
+    for i in range(len(dates)):
+          dates[i] = datetime.datetime.strptime(dates[i], '%Y-%m-%d %H:%M:%S')
+          dates[i] = dates[i].replace(tzinfo=pytz.timezone('UTC')).astimezone(pytz.timezone(timeZone))
+    plt.figure()
+    plt.plot(dates, temperatures)
+    plt.gcf().autofmt_xdate()
+    myFmt = mdates.DateFormatter('%Y-%m-%d %H:%M')
+    plt.gca().xaxis.set_major_formatter(myFmt)
+    plt.title('Board Temperature')
+    plt.ylabel('°C')
+    
