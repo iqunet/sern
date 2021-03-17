@@ -22,3 +22,5 @@
 [OPCuaGetVibrationData.py](https://github.com/iqunet/sern/blob/master/examples/OPCuaGetVibrationData.py) Uses Python-opcua to retrieve and plot vibration data of a specific time period.
 
 [OPCuaGetVibrationDataStruct.py](https://github.com/iqunet/sern/blob/master/examples/OPCuaGetVibrationDataStruct.py) Uses Python-opcua to retrieve and plot the vibration data structure (vibration measurement data in the time and frequency domain in g and mm/s units) of a specific time period.
+
+[OPCuaGetAnomalyDetectionData.py](https://github.com/iqunet/sern/blob/master/examples/OPCuaGetAnomalyDetectionData.py) Uses Python-opcua to retrieve and plot the anomaly model data of a specific time period.
