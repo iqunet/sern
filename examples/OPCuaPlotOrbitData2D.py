@@ -330,9 +330,9 @@ if __name__ == "__main__":
     axesTitle = axesTitle.replace('2','Z')
     
     for p in pairs:
-        if len(data[p[0]]) == len(data[p[1]]):
+        if len(selectedData[p[0]]) == len(selectedData[p[1]]):
             plt.figure()
-            plt.plot(data[p[0]],data[p[1]])
+            plt.plot(selectedData[p[0]],selectedData[p[1]])
             dateTitle = selectedDates[p[0]].replace(tzinfo=pytz.timezone('UTC')).astimezone(pytz.timezone(timeZone))
             dateTitle = dateTitle.strftime("%a, %b %d, %Y %I:%M %p")
             plt.suptitle("ACC | SCATTER " + axesTitle, fontsize=12)
