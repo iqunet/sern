@@ -28,10 +28,10 @@ class OpcUaClient(object):
                     except Exception:
                         pass
                     try:
-                        obj._logger.warn('(Re)connecting to OPC-UA service.')
+                        obj._logger.warning('(Re)connecting to OPC-UA service.')
                         obj.reconnect()
                     except ConnectionRefusedError:
-                        obj._logger.warn(
+                        obj._logger.warning(
                             'Connection refused. Retry in 10s.'.format(
                                 OpcUaClient.RETRY_DELAY
                             )
@@ -269,7 +269,7 @@ class DataAcquisition(object):
                 cont=contId
             )
             if not len(partial):
-                DataAcquisition.LOGGER.warn(
+                DataAcquisition.LOGGER.warning(
                     'No data was returned for {:s}'.format(endNodeName)
                 )
                 break
