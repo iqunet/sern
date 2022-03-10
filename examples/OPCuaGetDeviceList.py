@@ -1,9 +1,8 @@
-import time
 import logging
-from urllib.parse import urlparse
+import asyncio
 
-from opcua import ua, Client
-
+from asyncua import Client
+from asyncua import ua
 
 class OpcUaClient(object):
     CONNECT_TIMEOUT = 15  # [sec]
@@ -13,10 +12,10 @@ class OpcUaClient(object):
     class Decorators(object):
         @staticmethod
         def autoConnectingClient(wrappedMethod):
-            def wrapper(obj, *args, **kwargs):
+            async def wrapper(obj, *args, **kwargs):
                 for retry in range(OpcUaClient.MAX_RETRIES):
                     try:
-                        return wrappedMethod(obj, *args, **kwargs)
+                        return await wrappedMethod(obj, *args, **kwargs)
                     except ua.uaerrors.BadNoMatch:
                         raise
                     except Exception:
@@ -30,128 +29,116 @@ class OpcUaClient(object):
                                 OpcUaClient.RETRY_DELAY
                             )
                         )
-                        time.sleep(OpcUaClient.RETRY_DELAY)
+                        await asyncio.sleep(OpcUaClient.RETRY_DELAY)
                 else:  # So the exception is exposed.
                     obj.reconnect()
-                    return wrappedMethod(obj, *args, **kwargs)
+                    return await wrappedMethod(obj, *args, **kwargs)
             return wrapper
 
     def __init__(self, serverUrl):
         self._logger = logging.getLogger(self.__class__.__name__)
         self._client = Client(
-            serverUrl.geturl(),
+            serverUrl,
             timeout=self.CONNECT_TIMEOUT
         )
 
-    def __enter__(self):
-        self.connect()
+    async def __aenter__(self):
+        await self.connect()
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.disconnect()
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await self.disconnect()
         self._client = None
 
-    @property
-    @Decorators.autoConnectingClient
-    def sensorList(self):
-        return self.objectsNode.get_children()
+    async def connect(self):
+        await self._client.connect()
+        await self._client.load_data_type_definitions()
 
-    @property
-    @Decorators.autoConnectingClient
-    def objectsNode(self):
-        path = [ua.QualifiedName(name='Objects', namespaceidx=0)]
-        return self._client.get_root_node().get_child(path)
-
-    def connect(self):
-        self._client.connect()
-        self._client.load_type_definitions()
-
-    def disconnect(self):
+    async def disconnect(self):
         try:
-            self._client.disconnect()
+            await self._client.disconnect()
         except Exception:
             pass
 
-    def reconnect(self):
-        self.disconnect()
-        self.connect()
+    async def reconnect(self):
+        await self.disconnect()
+        await self.connect()
+    
+    @Decorators.autoConnectingClient
+    async def read_browse_name(self, uaNode):
+        return await uaNode.read_browse_name()
 
     @Decorators.autoConnectingClient
-    def get_browse_name(self, uaNode):
-        return uaNode.get_browse_name()
+    async def read_node_class(self, uaNode):
+        return await uaNode.read_node_class()
 
     @Decorators.autoConnectingClient
-    def get_node_class(self, uaNode):
-        return uaNode.get_node_class()
+    async def get_namespace_index(self, uri):
+        return await self._client.get_namespace_index(uri)
 
     @Decorators.autoConnectingClient
-    def get_child(self, uaNode, path):
-        return uaNode.get_child(path)
+    async def get_child(self, uaNode, path):
+        return await uaNode.get_child(path)
+    
+    @Decorators.autoConnectingClient
+    async def get_sensor_list(self):
+        objectsNode = await self.get_objects_node()
+        return await objectsNode.get_children()
 
     @Decorators.autoConnectingClient
-    def read_raw_history(self,
-                         uaNode,
-                         starttime=None,
-                         endtime=None,
-                         numvalues=0,
-                         cont=None):
-        details = ua.ReadRawModifiedDetails()
-        details.IsReadModified = False
-        details.StartTime = starttime or ua.get_win_epoch()
-        details.EndTime = endtime or ua.get_win_epoch()
-        details.NumValuesPerNode = numvalues
-        details.ReturnBounds = True
-        result = OpcUaClient._history_read(uaNode, details, cont)
-        assert(result.StatusCode.is_good())
-        return result.HistoryData.DataValues, result.ContinuationPoint
+    async def get_objects_node(self):
+        path = [ua.QualifiedName('Objects', 0)]
+        root = self._client.get_root_node()
+        return await root.get_child(path)
 
-    @staticmethod
-    def _history_read(uaNode, details, cont):
-        valueid = ua.HistoryReadValueId()
-        valueid.NodeId = uaNode.nodeid
-        valueid.IndexRange = ''
-        valueid.ContinuationPoint = cont
-
-        params = ua.HistoryReadParameters()
-        params.HistoryReadDetails = details
-        params.TimestampsToReturn = ua.TimestampsToReturn.Both
-        params.ReleaseContinuationPoints = False
-        params.NodesToRead.append(valueid)
-        result = uaNode.server.history_read(params)[0]
-        return result
-
+    @Decorators.autoConnectingClient
+    async def read_raw_history(self,
+                                uaNode,
+                                starttime=None,
+                                endtime=None,
+                                numvalues=0,
+                                ):
+        return await uaNode.read_raw_history(
+            starttime=starttime,
+            endtime=endtime,
+            numvalues=numvalues,
+        )
 
 class DataAcquisition(object):
     LOGGER = logging.getLogger('DataAcquisition')
-
+    
     @staticmethod
-    def get_device_list(serverUrl):
+    async def get_device_list(serverUrl):
         deviceList = dict()
-        with OpcUaClient(serverUrl) as client:
-            for sensorNode in client.sensorList:
-                macId = client.get_browse_name(sensorNode).Name
-                if (client.get_node_class(sensorNode) is ua.NodeClass.Object) \
+        async with OpcUaClient(serverUrl) as client:
+            for sensorNode in await client.get_sensor_list():
+                macId = await client.read_browse_name(sensorNode)
+                macId = macId.Name
+                if (await client.read_node_class(sensorNode) is ua.NodeClass.Object) \
                         and ("server" not in macId.lower()):
                     try:
                         tagPath = ua.QualifiedName(
                             'deviceTag',
                             sensorNode.nodeid.NamespaceIndex
                         )
-                        deviceTag = \
-                            client.get_child(sensorNode, tagPath).get_value()
-                        deviceList[macId] = '{:s}'.format(deviceTag)
+                        ch = await client.get_child(sensorNode, tagPath)
+                        deviceTag = await ch.get_value()
+                        if deviceTag != 'delete':
+                            deviceList[macId] = '{:s}'.format(deviceTag)
                     except Exception:
                         deviceList[macId] = 'Device'
                         continue
         return deviceList
 
-
-if __name__ == "__main__":
+async def main():
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("opcua").setLevel(logging.WARNING)
 
     # replace xx.xx.xx.xx with the IP address of your server
-    serverIP = "xx.xx.xx.xx"
-    serverUrl = urlparse('opc.tcp://{:s}:4840'.format(serverIP))
-    deviceList = DataAcquisition.get_device_list(serverUrl=serverUrl)
+    url: str = 'opc.tcp://xx.xx.xx.xx:4840/freeopcua/server'
+    
+    deviceList = await DataAcquisition.get_device_list(serverUrl=url)
     print(deviceList)
+
+if __name__ == '__main__':
+    asyncio.run(main())
