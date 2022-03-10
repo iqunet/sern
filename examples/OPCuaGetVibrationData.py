@@ -1,16 +1,17 @@
-import time
 import sys
 import pytz
 import logging
 import datetime
-from urllib.parse import urlparse
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.signal
 import math
 import matplotlib.dates as mdates
 
-from opcua import ua, Client
+import asyncio
+from asyncua import Client
+from asyncua import ua
 
 class HighPassFilter(object):
 
@@ -117,10 +118,10 @@ class OpcUaClient(object):
     class Decorators(object):
         @staticmethod
         def autoConnectingClient(wrappedMethod):
-            def wrapper(obj, *args, **kwargs):
+            async def wrapper(obj, *args, **kwargs):
                 for retry in range(OpcUaClient.MAX_RETRIES):
                     try:
-                        return wrappedMethod(obj, *args, **kwargs)
+                        return await wrappedMethod(obj, *args, **kwargs)
                     except ua.uaerrors.BadNoMatch:
                         raise
                     except Exception:
@@ -134,142 +135,123 @@ class OpcUaClient(object):
                                 OpcUaClient.RETRY_DELAY
                             )
                         )
-                        time.sleep(OpcUaClient.RETRY_DELAY)
+                        await asyncio.sleep(OpcUaClient.RETRY_DELAY)
                 else:  # So the exception is exposed.
                     obj.reconnect()
-                    return wrappedMethod(obj, *args, **kwargs)
+                    return await wrappedMethod(obj, *args, **kwargs)
             return wrapper
 
     def __init__(self, serverUrl):
         self._logger = logging.getLogger(self.__class__.__name__)
         self._client = Client(
-            serverUrl.geturl(),
+            serverUrl,
             timeout=self.CONNECT_TIMEOUT
         )
 
-    def __enter__(self):
-        self.connect()
+    async def __aenter__(self):
+        await self.connect()
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.disconnect()
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await self.disconnect()
         self._client = None
 
-    @property
-    @Decorators.autoConnectingClient
-    def sensorList(self):
-        return self.objectsNode.get_children()
+    async def connect(self):
+        await self._client.connect()
+        await self._client.load_data_type_definitions()
 
-    @property
-    @Decorators.autoConnectingClient
-    def objectsNode(self):
-        path = [ua.QualifiedName(name='Objects', namespaceidx=0)]
-        return self._client.get_root_node().get_child(path)
-
-    def connect(self):
-        self._client.connect()
-        self._client.load_type_definitions()
-
-    def disconnect(self):
+    async def disconnect(self):
         try:
-            self._client.disconnect()
+            await self._client.disconnect()
         except Exception:
             pass
 
-    def reconnect(self):
-        self.disconnect()
-        self.connect()
+    async def reconnect(self):
+        await self.disconnect()
+        await self.connect()
+    
+    @Decorators.autoConnectingClient
+    async def read_browse_name(self, uaNode):
+        return await uaNode.read_browse_name()
 
     @Decorators.autoConnectingClient
-    def get_browse_name(self, uaNode):
-        return uaNode.get_browse_name()
+    async def read_node_class(self, uaNode):
+        return await uaNode.read_node_class()
 
     @Decorators.autoConnectingClient
-    def get_node_class(self, uaNode):
-        return uaNode.get_node_class()
+    async def get_namespace_index(self, uri):
+        return await self._client.get_namespace_index(uri)
 
     @Decorators.autoConnectingClient
-    def get_namespace_index(self, uri):
-        return self._client.get_namespace_index(uri)
+    async def get_child(self, uaNode, path):
+        return await uaNode.get_child(path)
+    
+    @Decorators.autoConnectingClient
+    async def get_sensor_list(self):
+        objectsNode = await self.get_objects_node()
+        return await objectsNode.get_children()
 
     @Decorators.autoConnectingClient
-    def get_child(self, uaNode, path):
-        return uaNode.get_child(path)
+    async def get_objects_node(self):
+        path = [ua.QualifiedName('Objects', 0)]
+        root = self._client.get_root_node()
+        return await root.get_child(path)
 
     @Decorators.autoConnectingClient
-    def read_raw_history(self,
-                         uaNode,
-                         starttime=None,
-                         endtime=None,
-                         numvalues=0,
-                         cont=None):
-        details = ua.ReadRawModifiedDetails()
-        details.IsReadModified = False
-        details.StartTime = starttime or ua.get_win_epoch()
-        details.EndTime = endtime or ua.get_win_epoch()
-        details.NumValuesPerNode = numvalues
-        details.ReturnBounds = True
-        result = OpcUaClient._history_read(uaNode, details, cont)
-        assert(result.StatusCode.is_good())
-        return result.HistoryData.DataValues, result.ContinuationPoint
-
-    @staticmethod
-    def _history_read(uaNode, details, cont):
-        valueid = ua.HistoryReadValueId()
-        valueid.NodeId = uaNode.nodeid
-        valueid.IndexRange = ''
-        valueid.ContinuationPoint = cont
-
-        params = ua.HistoryReadParameters()
-        params.HistoryReadDetails = details
-        params.TimestampsToReturn = ua.TimestampsToReturn.Both
-        params.ReleaseContinuationPoints = False
-        params.NodesToRead.append(valueid)
-        result = uaNode.server.history_read(params)[0]
-        return result
-
+    async def read_raw_history(self,
+                                uaNode,
+                                starttime=None,
+                                endtime=None,
+                                numvalues=0,
+                                ):
+        return await uaNode.read_raw_history(
+            starttime=starttime,
+            endtime=endtime,
+            numvalues=numvalues,
+        )
+    
 class DataAcquisition(object):
     LOGGER = logging.getLogger('DataAcquisition')
-    MAX_VALUES_PER_ENDNODE = 100  # Num values per endnode
-    MAX_VALUES_PER_REQUEST = 2  # Num values per history request
-
+    
     @staticmethod
-    def get_sensor_data(serverUrl, macId, browseName, starttime, endtime):
-        with OpcUaClient(serverUrl) as client:
-            assert(client._client.uaclient._uasocket.timeout == 15)
-            sensorNode = \
-                DataAcquisition.get_sensor_node(client, macId, browseName)
+    async def get_sensor_data(serverUrl, macId, browseName, starttime, endtime):
+        async with OpcUaClient(serverUrl) as client:
+            sensorNode = await DataAcquisition.get_sensor_node(
+                client,
+                macId,
+                browseName
+            )
             DataAcquisition.LOGGER.info(
                     'Browsing {:s}'.format(macId)
             )
             (values, dates) = \
-                DataAcquisition.get_endnode_data(
-                        client=client,
-                        endNode=sensorNode,
-                        starttime=starttime,
-                        endtime=endtime
+                await DataAcquisition.get_endnode_data(
+                    client=client,
+                    endNode=sensorNode,
+                    starttime=starttime,
+                    endtime=endtime
                 )
         return (values, dates)
-
+    
     @staticmethod
-    def get_sensor_node(client, macId, browseName):
-        nsIdx = client.get_namespace_index(
+    async def get_sensor_node(client, macId, browseName):
+        nsIdx = await client.get_namespace_index(
                 'http://www.iqunet.com'
         )  # iQunet namespace index
-        bpath = [
-                ua.QualifiedName(name=macId, namespaceidx=nsIdx),
-                ua.QualifiedName(name=browseName, namespaceidx=nsIdx)
-        ]
-        sensorNode = client.objectsNode.get_child(bpath)
+        bpath = []
+        bpath.append(ua.QualifiedName(macId, nsIdx))
+        bpath.append(ua.QualifiedName(browseName, nsIdx))
+        objectsNode = await client.get_objects_node()
+        sensorNode = await objectsNode.get_child(bpath)
         return sensorNode
-
+    
     @staticmethod
-    def get_endnode_data(client, endNode, starttime, endtime):
-        dvList = DataAcquisition.download_endnode(
-                client=client,
-                endNode=endNode,
-                starttime=starttime,
-                endtime=endtime
+    async def get_endnode_data(client, endNode, starttime, endtime):
+        dvList = await DataAcquisition.download_endnode(
+            client=client,
+            endNode=endNode,
+            starttime=starttime,
+            endtime=endtime
         )
         dates, values = ([], [])
         for dv in dvList:
@@ -280,63 +262,49 @@ class DataAcquisition(object):
         if starttime is None:
             values.reverse()
             dates.reverse()
-        return (values, dates)
-
+        return (values, dates)         
+           
     @staticmethod
-    def download_endnode(client, endNode, starttime, endtime):
-        endNodeName = client.get_browse_name(endNode).Name
+    async def download_endnode(client, endNode, starttime, endtime):
+        endNodeName = await client.read_browse_name(endNode)
         DataAcquisition.LOGGER.info(
                 'Downloading endnode {:s}'.format(
-                    endNodeName
-                )
+                        endNodeName.Name
+                    )
         )
-        dvList, contId = [], None
-        while True:
-            remaining = DataAcquisition.MAX_VALUES_PER_ENDNODE - len(dvList)
-            assert(remaining >= 0)
-            numvalues = min(DataAcquisition.MAX_VALUES_PER_REQUEST, remaining)
-            partial, contId = client.read_raw_history(
-                uaNode=endNode,
-                starttime=starttime,
-                endtime=endtime,
-                numvalues=numvalues,
-                cont=contId
+        dvList = await client.read_raw_history(
+            uaNode=endNode,
+            starttime=starttime,
+            endtime=endtime,
+        )
+        if not len(dvList):
+            DataAcquisition.LOGGER.warning(
+                'No data was returned for {:s}'.format(endNodeName.Name)
             )
-            if not len(partial):
-                DataAcquisition.LOGGER.warning(
-                    'No data was returned for {:s}'.format(endNodeName)
-                )
-                break
-            dvList.extend(partial)
+        else:
             sys.stdout.write('\r    Loaded {:d} values, {:s} -> {:s}'.format(
                 len(dvList),
                 str(dvList[0].ServerTimestamp.strftime("%Y-%m-%d %H:%M:%S")),
                 str(dvList[-1].ServerTimestamp.strftime("%Y-%m-%d %H:%M:%S"))
             ))
             sys.stdout.flush()
-            if contId is None:
-                break  # No more data.
-            if len(dvList) >= DataAcquisition.MAX_VALUES_PER_ENDNODE:
-                break  # Too much data.
-        sys.stdout.write('...OK.\n')
+            sys.stdout.write('...OK.\n')
         return dvList
 
-
-if __name__ == "__main__":
+async def main():
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("opcua").setLevel(logging.WARNING)
 
     # replace xx.xx.xx.xx with the IP address of your server
-    serverIP = "xx.xx.xx.xx"
-    serverUrl = urlparse('opc.tcp://{:s}:4840'.format(serverIP))
+    url: str = 'opc.tcp://xx.xx.xx.xx:4840/freeopcua/server'
 
     # replace xx:xx:xx:xx with your sensors macId
     macId = 'xx:xx:xx:xx'
     
     # change settings
-    hpf = 3 # high pass filter (Hz)
-    startTime = "2021-02-15 00:00:00"
-    endTime = "2021-02-15 10:00:00"
+    hpf = 6 # high pass filter (Hz)
+    startTime = "2022-02-11 00:00:00"
+    endTime = "2022-02-15 10:00:00"
     timeZone = "Europe/Brussels" # local time zone
     
     # format start and end time
@@ -348,13 +316,21 @@ if __name__ == "__main__":
     )
     
     # acquire history data
-    (values, dates) = DataAcquisition.get_sensor_data(
-        serverUrl=serverUrl,
+    (values, dates) = await DataAcquisition.get_sensor_data(
+        serverUrl=url,
         macId=macId,
         browseName="accelerationPack",
         starttime=starttime,
         endtime=endtime
     )
+    
+    # create folder to save images
+    cwd = os.getcwd()
+    folder = cwd + "\Vibration"
+    if os.path.isdir(folder):
+        pass
+    else:
+        os.mkdir(folder)
 
     # convert vibration data to 'g' units and plot data
     data = [val[1:-6] for val in values]
@@ -385,6 +361,12 @@ if __name__ == "__main__":
         plt.xlabel('Time [s]')
         plt.ylabel('RMS Acceleration [g]')
         
+        dateTitle = title.replace(" ", "_")
+        dateTitle = dateTitle.replace(":","")
+        figTitle = folder + '\image_' + dateTitle + '_' + str(i) + '_time.png'
+        plt.savefig(figTitle)
+        plt.close()
+        
         #plot frequency domain
         plt.figure()
         windowSize = len(data[i]) # window size
@@ -408,9 +390,13 @@ if __name__ == "__main__":
         plt.xlabel('Frequency [Hz]')
         plt.ylabel('RMS Acceleration [g]')
         
+        figTitle = folder + '\image_' + dateTitle + '_' + str(i) + '_freq.png'
+        plt.savefig(figTitle)
+        plt.close()
+        
     # acquire board temperature
-    (temperatures, dates) = DataAcquisition.get_sensor_data(
-        serverUrl=serverUrl,
+    (temperatures, dates) = await DataAcquisition.get_sensor_data(
+        serverUrl=url,
         macId=macId,
         browseName="boardTemperature",
         starttime=starttime,
@@ -427,3 +413,9 @@ if __name__ == "__main__":
     plt.title('Board Temperature')
     plt.ylabel('°C')
     
+    figTitle = folder + '\Boardtemperature.png'
+    plt.savefig(figTitle)
+    plt.close()
+
+if __name__ == '__main__':
+    asyncio.run(main())
