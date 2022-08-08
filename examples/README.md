@@ -26,3 +26,5 @@
 [OPCuaGetAnomalyDetectionData.py](https://github.com/iqunet/sern/blob/master/examples/OPCuaGetAnomalyDetectionData.py) Uses opcua-asyncio to retrieve and plot the anomaly model data of a specific time period.
 
 [OPCuaPlotOrbitData2D.py](https://github.com/iqunet/sern/blob/master/examples/OPCuaPlotOrbitData2D.py) Uses opcua-asyncio to retrieve and plot the 2D orbits of a specific time period.
+
+[OPCuaDumpVibrationDataAsCsv.py](https://github.com/iqunet/sern/blob/master/examples/OPCuaDumpVibrationDataAsCsv.py) Uses opcua-asyncio to retrieve the frequency domain x axis data and export this data into csv files.
